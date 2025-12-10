@@ -1,0 +1,97 @@
+第一階段：環境與檔案準備
+請在 Raspberry Pi 的桌面上建立一個資料夾，命名為 audio_project。
+
+1. 準備音訊檔案
+請將製作好的 21 個 WAV 檔案 放入 audio_project 資料夾中。
+
+格式要求：必須是 .wav，且所有檔案的長度 (秒數) 和 採樣率 (Sample Rate) 必須完全一致。
+
+命名規則：
+
+base.wav (主旋律)
+
+good_1.wav ... good_10.wav (好聽音樂，1 最弱，10 最強)
+
+bad_1.wav ... bad_10.wav (不好聽音效，1 最弱，10 最強)
+
+2. 安裝必要的軟體
+打開終端機 (Terminal)，依序複製貼上並執行以下指令：
+
+Bash
+
+# 1. 更新系統清單
+sudo apt-get update
+
+# 2. 安裝音訊驅動程式庫 (PortAudio)
+sudo apt-get install libportaudio2
+
+# 3. 安裝 Python 的音訊處理套件
+pip3 install sounddevice soundfile numpy
+第二階段：找出硬體 ID
+我們需要知道系統給「有線耳機」和「藍牙喇叭」的編號是多少。
+
+插上有線耳機。
+
+連上藍牙喇叭。
+
+在 audio_project 資料夾中建立一個新檔案 check.py，內容如下：
+
+Python
+
+# check.py
+import sounddevice as sd
+print(sd.query_devices())
+在終端機執行：python3 check.py
+
+記下 ID：你會看到一串列表，請記下：
+
+耳機 (Headphones) 前面的數字 (例如 1)。
+
+藍牙喇叭 (你的喇叭名稱) 前面的數字 (例如 2)。
+
+第三階段：完整程式碼 (main.py)
+請在 audio_project 資料夾中建立 main.py，並將以下程式碼完全複製貼上。 注意：貼上後，請修改最上面的 ID 設定。
+
+
+第四階段：執行與測試步驟
+確認硬體：
+
+耳機已插入 3.5mm 孔。
+
+藍牙喇叭已連線。
+
+確認檔案：
+
+audio_project 資料夾內有 21 個 WAV 檔。
+
+main.py 裡的 DEVICE_ID 已經改成您查到的數字。
+
+執行程式： 在終端機輸入：
+
+Bash
+
+python3 main.py
+操作與聆聽：
+
+程式啟動後，兩邊應該都會聽到 Base 音樂。
+
+在鍵盤輸入 1 按 Enter ⮕ 耳機變豐富 (加好音樂)，喇叭變吵雜 (加壞音效)。
+
+在鍵盤輸入 0 按 Enter ⮕ 數值往回扣，剛剛加的音樂會消失。
+
+持續輸入 0 到負數 ⮕ 耳機變吵雜 (加壞音效)，喇叭變豐富 (加好音樂)。
+
+第五階段：如果聲音不同步 (跑拍)
+請聽 Base 音樂的節奏（鼓聲）：
+
+如果 耳機比喇叭快 (聽到：咚..咚)：
+
+打開 main.py。
+
+找到 BLUETOOTH_LATENCY_OFFSET = 0.3。
+
+調大這個數字 (例如改成 0.4 或 0.5)。
+
+如果 耳機比喇叭慢：
+
+調小這個數字 (例如改成 0.1 或 0)。
