@@ -20,7 +20,7 @@ BLUETOOTH_LATENCY_OFFSET = 0.3
 
 # 檔案名稱設定
 # 12/11 added by k0c4de: use directory variable to access files
-FILE_DIR = "./audio_christmas_ver/"
+FILE_DIR = "background_music/audio_christmas_ver/"
 FILE_BASE = FILE_DIR + "base.wav"
 FILES_GOOD = [FILE_DIR + f"good_{i}.wav" for i in range(1, 11)]
 FILES_BAD = [FILE_DIR + f"bad_{i}.wav" for i in range(1, 11)]

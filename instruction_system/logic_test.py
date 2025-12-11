@@ -6,7 +6,7 @@ current_stage = 1
 max_stage = 4
 
 # 音檔都放在 sound/ 資料夾
-SOUND_FOLDER = "sound"
+SOUND_FOLDER = "instruction_system/instruction_tts"
 
 def play_audio(filename):
     """
