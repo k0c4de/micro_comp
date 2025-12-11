@@ -4,40 +4,74 @@ import numpy as np
 import time
 import threading
 import sys
+import os
 
 # ==========================================
 # 1. 設定區域 (請修改這裡！)
 # ==========================================
 
 # 【重要】請填入剛剛查到的裝置 ID
-DEVICE_ID_HEADPHONE = 1  # 改成您的耳機 ID
-DEVICE_ID_BLUETOOTH = 2  # 改成您的藍牙喇叭 ID
+DEVICE_ID_HEADPHONE = 0
+DEVICE_ID_BLUETOOTH = 11
 
 # 藍牙延遲補償 (秒)
 # 因為藍牙通常比較慢，我們要讓耳機「等」一下
 # 如果耳機聲音比喇叭快，請把這個數字調大 (例如 0.3, 0.4)
-BLUETOOTH_LATENCY_OFFSET = 0.3 
+BLUETOOTH_LATENCY_OFFSET = 0.45
 
 # 檔案名稱設定
 # 12/11 added by k0c4de: use directory variable to access files
-FILE_DIR = "background_music/audio_christmas_ver/"
-FILE_BASE = FILE_DIR + "base.wav"
-FILES_GOOD = [FILE_DIR + f"good_{i}.wav" for i in range(1, 11)]
-FILES_BAD = [FILE_DIR + f"bad_{i}.wav" for i in range(1, 11)]
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+FILE_DIR = os.path.join(ROOT_DIR, "audio_christmas_ver")
+FILE_BASE = os.path.join(FILE_DIR, "base.wav")
+FILES_GOOD = [os.path.join(FILE_DIR, f"good_{i}.wav") for i in range(1, 7)]
+FILES_BAD = [os.path.join(FILE_DIR, f"bad_{i}.wav") for i in range(1, 7)]
 # 12/11 added end
+
+# 音量控制 (0.0 ~ 1.0 以上)
+BGM_VOLUME = 0.8
+TTS_VOLUME = 1.5
+
+# 系統取樣率設定 (降低以節省 CPU)
+TARGET_FS = 10000 
 
 # ==========================================
 # 2. 載入音訊 (Loading)
 # ==========================================
 print("正在載入音訊檔案 (WAV) 到記憶體，請稍候...")
 
+def resample_data(data, original_fs, target_fs):
+    if original_fs == target_fs:
+        return data
+    
+    ratio = target_fs / original_fs
+    new_length = int(len(data) * ratio)
+    
+    x_old = np.linspace(0, len(data), len(data))
+    x_new = np.linspace(0, len(data), new_length)
+    
+    if data.ndim == 2:
+        new_data = np.zeros((new_length, data.shape[1]), dtype=data.dtype)
+        for ch in range(data.shape[1]):
+            new_data[:, ch] = np.interp(x_new, x_old, data[:, ch])
+        return new_data
+    else:
+        return np.interp(x_new, x_old, data)
+
 def load_audio(filename):
     try:
         data, samplerate = sf.read(filename, dtype='float32')
+        
+        # 強制重新取樣到 TARGET_FS
+        if samplerate != TARGET_FS:
+            # print(f"Resampling {filename} from {samplerate} to {TARGET_FS}...")
+            data = resample_data(data, samplerate, TARGET_FS)
+            
         # 如果是單聲道，轉成立體聲
         if data.ndim == 1:
             data = np.column_stack((data, data))
-        return data, samplerate
+            
+        return data, TARGET_FS
     except Exception as e:
         print(f"錯誤：找不到檔案 {filename} 或格式錯誤。")
         sys.exit(1)
@@ -65,6 +99,36 @@ class AudioEngine:
         # 狀態變數：-10 (最壞) ~ 0 (原始) ~ +10 (最好)
         self.current_level = 0 
         self.lock = threading.Lock()
+        # 12/11 modified by k0c4de: Add TTS mixing state
+        self.tts_data = None
+        self.tts_idx = 0
+        self.tts_playing = False
+
+    # 12/11 modified by k0c4de: Add TTS playback method
+    def play_tts(self, filename):
+        """
+        Load and play a TTS file on the headphone channel.
+        """
+        try:
+            # Use the global fs (sampling rate)
+            data, samplerate = sf.read(filename, dtype='float32')
+            
+            # Resample if necessary
+            if samplerate != fs:
+                print(f"Resampling TTS from {samplerate} to {fs} Hz...")
+                data = resample_data(data, samplerate, fs)
+
+            # If mono, make stereo
+            if data.ndim == 1:
+                data = np.column_stack((data, data))
+            
+            with self.lock:
+                self.tts_data = data
+                self.tts_idx = 0
+                self.tts_playing = True
+            print(f"Playing TTS: {filename}")
+        except Exception as e:
+            print(f"Error playing TTS {filename}: {e}")
 
     def update_logic(self, input_val):
         """ 
@@ -135,6 +199,9 @@ class AudioEngine:
             mix += bad_data_list[i][indices]
 
         # 5. 防止爆音 (Clipping Protection)
+        # 先套用 BGM 音量
+        mix *= BGM_VOLUME
+
         max_val = np.max(np.abs(mix))
         if max_val > 1.0:
             mix /= max_val
@@ -150,7 +217,7 @@ start_time = time.time()
 
 def callback_headphone(outdata, frames, time_info, status):
     # 耳機回呼：負責有線耳機，包含人工延遲
-    if status: print(f"Headphone: {status}")
+    # if status: print(f"Headphone: {status}")
     
     # 計算目前播放時間 (扣掉延遲補償，讓耳機晚一點播)
     current_time = time.time() - start_time - BLUETOOTH_LATENCY_OFFSET
@@ -161,17 +228,52 @@ def callback_headphone(outdata, frames, time_info, status):
 
     frame_idx = int(current_time * fs)
     data = engine.get_mix_chunk(frame_idx, frames, 'HEADPHONE')
+    
+    # 12/11 modified by k0c4de: Mix TTS if playing
+    with engine.lock:
+        if engine.tts_playing and engine.tts_data is not None:
+            remaining = len(engine.tts_data) - engine.tts_idx
+            if remaining > 0:
+                to_copy = min(frames, remaining)
+                # Add TTS to the mix. 
+                # Ensure we don't exceed array bounds of data (which matches frames)
+                # and tts_data.
+                
+                # Slice the TTS data
+                tts_chunk = engine.tts_data[engine.tts_idx : engine.tts_idx + to_copy]
+                
+                data[:to_copy] += tts_chunk * TTS_VOLUME
+                
+                engine.tts_idx += to_copy
+                
+                if engine.tts_idx >= len(engine.tts_data):
+                    engine.tts_playing = False
+            else:
+                engine.tts_playing = False
+
     outdata[:] = data
 
 def callback_bluetooth(outdata, frames, time_info, status):
     # 藍牙回呼：負責藍牙喇叭，直接播放
-    if status: print(f"BT: {status}")
+    # if status: print(f"BT: {status}")
     
     current_time = time.time() - start_time
     frame_idx = int(current_time * fs)
     
     data = engine.get_mix_chunk(frame_idx, frames, 'SPEAKER')
     outdata[:] = data
+
+# 12/11 modified by k0c4de: Function to start streams for external use
+def start_streams():
+    stream_phones = sd.OutputStream(
+        device=DEVICE_ID_HEADPHONE, channels=2, samplerate=fs, 
+        callback=callback_headphone, blocksize=8192, latency='high'
+    )
+    stream_bt = sd.OutputStream(
+        device=DEVICE_ID_BLUETOOTH, channels=2, samplerate=fs, 
+        callback=callback_bluetooth, blocksize=8192, latency='high'
+    )
+    return stream_phones, stream_bt
 
 # ==========================================
 # 5. 主程式啟動
@@ -188,11 +290,11 @@ if __name__ == "__main__":
         # 同時開啟兩個音訊串流
         stream_phones = sd.OutputStream(
             device=DEVICE_ID_HEADPHONE, channels=2, samplerate=fs, 
-            callback=callback_headphone, blocksize=2048
+            callback=callback_headphone, blocksize=8192, latency='high'
         )
         stream_bt = sd.OutputStream(
             device=DEVICE_ID_BLUETOOTH, channels=2, samplerate=fs, 
-            callback=callback_bluetooth, blocksize=2048
+            callback=callback_bluetooth, blocksize=8192, latency='high'
         )
 
         with stream_phones, stream_bt:
