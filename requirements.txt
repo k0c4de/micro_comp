@@ -1,0 +1,6 @@
+python-vlc
+sounddevice
+soundfile
+numpy
+keyboard
+# RPi.GPIO # Uncomment for Raspberry Pi
