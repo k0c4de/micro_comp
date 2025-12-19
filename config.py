@@ -7,7 +7,7 @@ BGM_DIR = os.path.join(ROOT_DIR, "bgm")
 
 # Device IDs (Update these based on your hardware)
 DEVICE_ID_HEADPHONE = 0 # Default output usually
-DEVICE_ID_BLUETOOTH = 1 # Update this!
+DEVICE_ID_BLUETOOTH = 11
 
 # Stage Settings
 STAGES = [1, 2, 3]
@@ -41,7 +41,7 @@ VIDEO_FILES = {
 # Mapping based on folder structure in bgm/
 # bgm/1_S1_Intro/S1_Intro_out.mp3
 BGM_FILES = {
-    "S0": None, # No BGM for S0? Or check folder 0_Start_intro
+    "S0": os.path.joint(BGM_DIR, "0_Start_intro", "Start_intro_int.mp3"),
     
     "S1_intro": os.path.join(BGM_DIR, "1_S1_Intro", "S1_Intro_out.mp3"),
     "S1_obey": os.path.join(BGM_DIR, "2_S1_Obey", "S1_Obey_out.mp3"),
