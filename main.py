@@ -4,7 +4,7 @@ import os
 # Add current directory to path to ensure imports work
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from managers.game_manager import GameManager
+from managers.GameManager import GameManager
 
 def main():
     try:

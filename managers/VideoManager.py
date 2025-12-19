@@ -1,7 +1,7 @@
 import vlc
 import os
 import time
-from config import VIDEO_FILES
+from config import VIDEO_FILES, DEVICE_ID_HEADPHONE, DEVICE_NAME_HEADPHONE, VIDEO_VOLIME, TARGET_SAMPLE_RATE
 
 class VideoManager:
     def __init__(self):
@@ -9,7 +9,12 @@ class VideoManager:
         # --no-xlib is often recommended for Linux/Pi to avoid threading issues with X11
         self.instance = vlc.Instance("--no-xlib --quiet")
         self.player = self.instance.media_player_new()
-        self.player.set_fullscreen(True)
+        self.player.audio_set_volume(int(VIDEO_VOLIME * 100))
+        # self.player.set_fullscreen(True) # [DEMO] enable this while demo
+        
+        # Set Audio Output Device
+        self.audio_device_id = None
+        self._set_audio_output()
         
         self.current_key = None
         self.is_looping = False
@@ -19,20 +24,83 @@ class VideoManager:
         self.event_manager = self.player.event_manager()
         self.event_manager.event_attach(vlc.EventType.MediaPlayerEndReached, self._on_end_reached)
 
+    def _set_audio_output(self):
+        """
+        Attempt to set the audio output device based on DEVICE_NAME_HEADPHONE.
+        """
+        try:
+            mods = self.player.audio_output_device_enum()
+            if mods:
+                target_device = None
+                found_devices = []
+                
+                current = mods
+                while current:
+                    dev_id = current.contents.device
+                    dev_desc = current.contents.description.decode('utf-8') if current.contents.description else ""
+                    found_devices.append((dev_id, dev_desc))
+                    
+                    # Check for name match
+                    if DEVICE_NAME_HEADPHONE.lower() in dev_desc.lower():
+                        target_device = dev_id
+                    
+                    current = current.contents.next
+                
+                vlc.libvlc_audio_output_device_list_release(mods)
+                
+                if target_device:
+                    print(f"[VideoManager] Setting Audio Device to: {target_device}")
+                    self.audio_device_id = target_device
+                    self.player.audio_output_device_set(None, target_device)
+                else:
+                    print(f"[VideoManager] Warning: Device matching '{DEVICE_NAME_HEADPHONE}' not found.")
+                    print(f"[VideoManager] Available devices: {found_devices}")
+                    # Fallback to default (don't set anything, let VLC decide)
+            else:
+                print("[VideoManager] No audio output devices found.")
+                
+        except Exception as e:
+            print(f"[VideoManager] Error setting audio device: {e}")
+
     def _on_end_reached(self, event):
         """Callback when video finishes."""
         # print("Video finished event received.")
         if self.is_looping:
-            # If looping, restart the video
-            # Note: This might have a slight gap. 
-            # For seamless looping, one might need a playlist or specific VLC options.
-            # But re-playing here is the simplest logic.
-            # We need to do this in a thread-safe way or just let the main loop handle it?
-            # Calling play() from callback might be risky in some VLC versions.
-            # Safer to set a flag and let the main loop restart it, 
-            # OR use media options for looping.
-            pass 
+            # Restart video
+            # We need to be careful calling play from callback. 
+            # A safer way is to set time to 0 and play.
+            # Or just let the main loop handle it if we expose 'finished' and 'is_looping'
+            # But here we want seamless-ish looping.
+            
+            # Option 1: Seek to 0 and play (might work)
+            # self.player.set_media(self.player.get_media())
+            # self.player.play()
+            
+            # Option 2: Just set finished = True and let GameManager restart it? 
+            # That causes a black blink.
+            
+            # Option 3: Use VLC's input-repeat option (better done at init or media creation)
+            # But we want to toggle looping per video.
+            
+            # Let's try seeking to start.
+            # Note: This callback is from a different thread.
+            pass
+            
         self.finished = True
+
+    def check_status(self):
+        """
+        Check if video is finished.
+        If looping and finished, restart it.
+        """
+        if self.finished:
+            if self.is_looping:
+                self.player.set_position(0.0)
+                self.player.play()
+                self.finished = False
+                return False
+            return True
+        return False
 
     def play(self, video_key, loop=False):
         """
@@ -50,6 +118,18 @@ class VideoManager:
         print(f"[VideoManager] Playing: {video_key} (Loop: {loop})")
         
         self.current_key = video_key
+        self.is_looping = loop
+        self.finished = False
+        
+        media = self.instance.media_new(path)
+        self.player.set_media(media)
+        
+        # Re-apply audio device to ensure it persists across videos
+        if self.audio_device_id:
+            self.player.audio_output_device_set(None, self.audio_device_id)
+            
+        self.player.play()
+
         self.is_looping = loop
         self.finished = False
 

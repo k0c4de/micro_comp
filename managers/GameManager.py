@@ -1,7 +1,8 @@
 import time
 import sys
-from managers.video_manager import VideoManager
-from managers.outer_music_manager import OuterMusicManager
+from managers.VideoManager import VideoManager
+from managers.OuterMusicManager import OuterMusicManager
+from managers.InnerMusicManager import InnerMusicManager
 from config import STAGES, MAX_STAGES, STAGE_BUTTON_MAPPING, PIN_BUTTON_0, PIN_BUTTON_1
 
 # Try importing GPIO
@@ -23,6 +24,7 @@ class GameManager:
     def __init__(self):
         self.video_mgr = VideoManager()
         self.music_mgr = OuterMusicManager()
+        self.inner_music_mgr = InnerMusicManager()
         
         self.current_stage = 0 # 0 means S0 (Start)
         self.state = "INIT" # INIT, INTRO, LOOP, RESULT, ENDING
@@ -31,6 +33,7 @@ class GameManager:
         self.rebel_count = 0
         
         self.running = True
+        self.input_cooldown = 0 # Timestamp to ignore input until
         
         # Setup Input
         self._setup_input()
@@ -50,17 +53,17 @@ class GameManager:
         """
         # Check GPIO
         if GPIO_AVAILABLE:
-            if GPIO.input(PIN_BUTTON_0) == GPIO.LOW:
+            if GPIO.input(PIN_BUTTON_0) == GPIO.HIGH:
                 return 0
-            if GPIO.input(PIN_BUTTON_1) == GPIO.LOW:
+            if GPIO.input(PIN_BUTTON_1) == GPIO.HIGH:
                 return 1
         
         # Check Keyboard (Fallback/Debug)
-        if KEYBOARD_AVAILABLE:
-            if keyboard.is_pressed('0'):
-                return 0
-            if keyboard.is_pressed('1'):
-                return 1
+        # if KEYBOARD_AVAILABLE:
+        #     if keyboard.is_pressed('0'):
+        #         return 0
+        #     if keyboard.is_pressed('1'):
+        #         return 1
                 
         return None
 
@@ -81,6 +84,7 @@ class GameManager:
     def cleanup(self):
         self.video_mgr.stop()
         self.music_mgr.stop()
+        self.inner_music_mgr.stop()
         if GPIO_AVAILABLE:
             GPIO.cleanup()
 
@@ -99,9 +103,10 @@ class GameManager:
 
         elif self.state == "STAGE_LOOP":
             # Wait for input
-            btn = self._check_input()
-            if btn is not None:
-                self._handle_input(btn)
+            if time.time() > self.input_cooldown:
+                btn = self._check_input()
+                if btn is not None:
+                    self._handle_input(btn)
 
         elif self.state == "STAGE_RESULT":
             if video_finished:
@@ -123,7 +128,8 @@ class GameManager:
         print(">>> State: S0 (Start)")
         self.state = "S0_START"
         self.video_mgr.play("S0")
-        self.music_mgr.play("S0") # Might be None
+        self.music_mgr.play("S0")
+        self.inner_music_mgr.play("S0")
 
     def _enter_stage_intro(self):
         print(f">>> State: Stage {self.current_stage} Intro")
@@ -131,14 +137,21 @@ class GameManager:
         key = f"S{self.current_stage}_intro"
         self.video_mgr.play(key)
         self.music_mgr.play(key)
+        self.inner_music_mgr.play(key)
 
     def _enter_stage_loop(self):
         print(f">>> State: Stage {self.current_stage} Loop (Waiting for Input)")
+        
+        # Set cooldown to prevent immediate triggering from previous presses
+        self.input_cooldown = time.time() + 2.0 
+        
         self.state = "STAGE_LOOP"
         key = f"S{self.current_stage}_loop"
         self.video_mgr.play(key, loop=True)
         # Music for loop? Usually continues from Intro or silence.
         # If we want to stop intro music:
+        # self.music_mgr.stop() 
+        # self.inner_music_mgr.stop()
         # self.music_mgr.stop() 
         # But usually BGM continues.
 
@@ -163,9 +176,11 @@ class GameManager:
     def _enter_stage_result(self, result_type):
         print(f">>> State: Stage {self.current_stage} Result ({result_type})")
         self.state = "STAGE_RESULT"
+        self.input_cooldown = time.time() + 2.0 # Wait 2 seconds before allowing skip
         key = f"S{self.current_stage}_{result_type}"
-        self.video_mgr.play(key)
+        self.video_mgr.play(key, loop=True) # Loop the result video
         self.music_mgr.play(key)
+        self.inner_music_mgr.play(key)
 
     def _next_stage(self):
         if self.current_stage < MAX_STAGES:
@@ -188,3 +203,4 @@ class GameManager:
         key = f"Ending_{ending_type}"
         self.video_mgr.play(key)
         self.music_mgr.play(key)
+        self.inner_music_mgr.play(key)

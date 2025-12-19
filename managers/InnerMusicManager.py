@@ -1,40 +1,41 @@
 import sounddevice as sd
 import soundfile as sf
 import os
+import time
 import numpy as np
-from config import BGM_FILES, DEVICE_ID_BLUETOOTH, DEVICE_NAME_BLUETOOTH, OUTER_BGM_VOLUME, OUTER_BGM_DELAY, TARGET_SAMPLE_RATE
+from config import INNER_BGM_FILES, DEVICE_ID_HEADPHONE, DEVICE_NAME_HEADPHONE, INNER_BGM_VOLUME, INNER_BGM_DELAY, TARGET_SAMPLE_RATE
 
-class OuterMusicManager:
+class InnerMusicManager:
     def __init__(self):
         self.stream = None
         self.device_id = self._find_device()
-        print(f"[OuterMusicManager] Initialized with Device ID: {self.device_id}")
+        print(f"[InnerMusicManager] Initialized with Device ID: {self.device_id}")
 
     def _find_device(self):
         """Find device ID by name."""
         try:
             devices = sd.query_devices()
             for i, dev in enumerate(devices):
-                if DEVICE_NAME_BLUETOOTH.lower() in dev['name'].lower():
-                    print(f"[OuterMusicManager] Found Bluetooth Device: {dev['name']} (ID: {i})")
+                if DEVICE_NAME_HEADPHONE.lower() in dev['name'].lower():
+                    print(f"[InnerMusicManager] Found Headphone Device: {dev['name']} (ID: {i})")
                     return i
             
-            print(f"[OuterMusicManager] Warning: Device matching '{DEVICE_NAME_BLUETOOTH}' not found. Using default ID {DEVICE_ID_BLUETOOTH}.")
-            return DEVICE_ID_BLUETOOTH
+            print(f"[InnerMusicManager] Warning: Device matching '{DEVICE_NAME_HEADPHONE}' not found. Using default ID {DEVICE_ID_HEADPHONE}.")
+            return DEVICE_ID_HEADPHONE
         except Exception as e:
-            print(f"[OuterMusicManager] Error querying devices: {e}")
-            return DEVICE_ID_BLUETOOTH
+            print(f"[InnerMusicManager] Error querying devices: {e}")
+            return DEVICE_ID_HEADPHONE
 
     def play(self, key):
         """
         Play audio file associated with key on the Bluetooth device.
         """
-        path = BGM_FILES.get(key)
+        path = INNER_BGM_FILES.get(key)
         if not path:
             return
             
         if not os.path.exists(path):
-            print(f"[OuterMusicManager] File not found: {path}")
+            print(f"[InnerMusicManager] File not found: {path}")
             return
 
         # Stop any currently playing audio
@@ -50,16 +51,16 @@ class OuterMusicManager:
                 if step > 1:
                     data = data[::step]
                     fs = int(fs / step)
-                    # print(f"[OuterMusicManager] Downsampled to {fs} Hz")
+                    # print(f"[InnerMusicManager] Downsampled to {fs} Hz")
 
             # Apply Volume
-            data = data * OUTER_BGM_VOLUME
+            data = data * INNER_BGM_VOLUME
             
             # Handle mono/stereo
             channels = data.shape[1] if data.ndim > 1 else 1
             
             # Calculate delay samples
-            delay_samples = int(OUTER_BGM_DELAY * fs) if OUTER_BGM_DELAY > 0 else 0
+            delay_samples = int(INNER_BGM_DELAY * fs) if INNER_BGM_DELAY > 0 else 0
             
             # Define callback for stream
             # We use a closure to keep track of position
@@ -69,7 +70,7 @@ class OuterMusicManager:
             def callback(outdata, frames, time, status):
                 nonlocal position
                 if status:
-                    print(f"[OuterMusicManager] Stream Status: {status}")
+                    print(f"[InnerMusicManager] Stream Status: {status}")
                 
                 chunk_len = len(outdata)
                 
@@ -129,10 +130,10 @@ class OuterMusicManager:
                 latency='high' # Increase latency to prevent underflow
             )
             self.stream.start()
-            print(f"[OuterMusicManager] Playing: {key} (Delay: {OUTER_BGM_DELAY}s, Rate: {fs}Hz)")
+            print(f"[InnerMusicManager] Playing: {key} (Delay: {INNER_BGM_DELAY}s, Rate: {fs}Hz)")
 
         except Exception as e:
-            print(f"[OuterMusicManager] Error playing {key}: {e}")
+            print(f"[InnerMusicManager] Error playing {key}: {e}")
 
     def stop(self):
         if self.stream:
@@ -140,6 +141,6 @@ class OuterMusicManager:
                 self.stream.stop()
                 self.stream.close()
             except Exception as e:
-                print(f"[OuterMusicManager] Error stopping: {e}")
+                print(f"[InnerMusicManager] Error stopping: {e}")
             finally:
                 self.stream = None
